@@ -12,7 +12,7 @@ import java.util.function.Function;
 
 /**
  * Validates and normalizes one CSV row. Same rules for both sources:
- * text is trimmed (blank = no value); sourceSystem, side and currency are uppercased;
+ * text is trimmed (blank = no value); side and currency are uppercased;
  * numbers are exact BigDecimal; dates are yyyy-MM-dd; timestamps are ISO-8601 with offset, converted to UTC.
  * A row with any invalid value is skipped. Blank values are not checked.
  */
@@ -33,11 +33,8 @@ public class RecordNormalizer {
         }
         Row f = new Row(csv);
 
-        f.parse("sourceSystem", v -> upperMatching(v, source.name()));
-
         SourceRecord record = new SourceRecord(
                 source, fileName, csv.getRecordNumber() + 1, // header is row 1
-                f.text("sourceBatchId"),
                 f.parse("businessDate", LocalDate::parse),
                 f.text("accountId"),
                 f.text("transactionId"),

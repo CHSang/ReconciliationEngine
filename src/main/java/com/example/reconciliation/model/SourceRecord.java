@@ -15,7 +15,6 @@ public record SourceRecord(
         SourceSystem source,
         String fileName,
         long rowNumber,
-        String sourceBatchId,
         LocalDate businessDate,
         String accountId,
         String transactionId,
