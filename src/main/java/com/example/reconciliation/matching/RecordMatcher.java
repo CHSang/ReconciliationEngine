@@ -1,7 +1,6 @@
 package com.example.reconciliation.matching;
 
 import com.example.reconciliation.model.RecordMatch;
-import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.SourceRecord;
 import org.springframework.stereotype.Component;
 
@@ -13,13 +12,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Pairs DBS and Quantifeed records one-to-one by correlationId, within the same type and business date.
+ * Pairs DBS and Quantifeed records one-to-one by correlationId, within the same business date.
  * Only correlationId is used to match: executionId differs per system and is kept for tracing only.
  */
 @Component
 public class RecordMatcher {
 
-    private record Key(ReconciliationType type, LocalDate businessDate, String correlationId) {
+    private record Key(LocalDate businessDate, String correlationId) {
     }
 
     /** Returns one match per key: DBS records first (file order), then Quantifeed-only records. */
@@ -37,10 +36,10 @@ public class RecordMatcher {
         return matches;
     }
 
-    /** correlationId must be unique per type and date; a duplicate stops the run rather than overwriting a record. */
+    /** correlationId must be unique per business date; a duplicate stops the run rather than overwriting a record. */
     private static Map<Key, SourceRecord> byKey(List<SourceRecord> records) {
         return records.stream().collect(Collectors.toMap(
-                r -> new Key(r.type(), r.businessDate(), r.correlationId()),
+                r -> new Key(r.businessDate(), r.correlationId()),
                 r -> r,
                 (a, b) -> {
                     throw new IllegalStateException("Duplicate correlationId " + a.correlationId() + " in "

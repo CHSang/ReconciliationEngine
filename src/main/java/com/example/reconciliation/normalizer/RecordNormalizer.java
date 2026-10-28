@@ -1,6 +1,5 @@
 package com.example.reconciliation.normalizer;
 
-import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import org.apache.commons.csv.CSVRecord;
@@ -13,10 +12,9 @@ import java.util.function.Function;
 
 /**
  * Validates and normalizes one CSV row. Same rules for both sources:
- * text is trimmed (blank = no value); sourceSystem, type, side and currency are uppercased;
+ * text is trimmed (blank = no value); sourceSystem, side and currency are uppercased;
  * numbers are exact BigDecimal; dates are yyyy-MM-dd; timestamps are ISO-8601 with offset, converted to UTC.
- * A row with any invalid value is skipped. Blank values are not checked: input files must fill in every field
- * a record's type uses.
+ * A row with any invalid value is skipped. Blank values are not checked.
  */
 public class RecordNormalizer {
 
@@ -36,13 +34,11 @@ public class RecordNormalizer {
         Row f = new Row(csv);
 
         f.parse("sourceSystem", v -> upperMatching(v, source.name()));
-        ReconciliationType type = f.parse("reconciliationType", v -> ReconciliationType.valueOf(v.toUpperCase(Locale.ROOT)));
 
         SourceRecord record = new SourceRecord(
                 source, fileName, csv.getRecordNumber() + 1, // header is row 1
                 f.text("sourceBatchId"),
                 f.parse("businessDate", LocalDate::parse),
-                type,
                 f.text("accountId"),
                 f.text("transactionId"),
                 f.text("correlationId"),

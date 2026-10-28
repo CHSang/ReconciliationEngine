@@ -15,7 +15,7 @@ import java.util.List;
 public class CsvRecordReader {
 
     public static final List<String> COLUMNS = List.of(
-            "sourceSystem", "sourceBatchId", "businessDate", "reconciliationType", "accountId", "transactionId",
+            "sourceSystem", "sourceBatchId", "businessDate", "accountId", "transactionId",
             "correlationId", "executionId", "securityId", "side", "quantity", "price", "amount",
             "currency", "balance", "settlementDate", "sourceCreatedAt");
 

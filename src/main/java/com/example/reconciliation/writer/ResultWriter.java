@@ -7,7 +7,6 @@ import org.apache.commons.csv.CSVPrinter;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -21,9 +20,9 @@ import java.util.List;
 public class ResultWriter {
 
     private static final String[] HEADER = {
-            "runId", "businessDate", "reconciliationType", "correlationId", "accountId", "securityId",
-            "currency", "dbsExecutionId", "quantifeedExecutionId", "dbsSourceRowNumber", "quantifeedSourceRowNumber",
-            "dbsValue", "quantifeedValue", "difference", "status", "breakType", "differenceDetails"};
+            "runId", "businessDate", "correlationId", "accountId", "securityId", "currency",
+            "dbsExecutionId", "quantifeedExecutionId", "dbsSourceRowNumber", "quantifeedSourceRowNumber",
+            "status", "reconciliationType", "breakType", "differenceDetails"};
 
     public void write(String runId, List<ReconciliationResult> results, Path file) throws IOException {
         Path dir = file.toAbsolutePath().getParent();
@@ -33,24 +32,18 @@ public class ResultWriter {
             try (CSVPrinter csv = CSVFormat.DEFAULT.builder().setHeader(HEADER).get().print(Files.newBufferedWriter(tmp))) {
                 for (ReconciliationResult r : results) {
                     SourceRecord any = r.any();
-                    csv.printRecord(runId, any.businessDate(), any.type(), any.correlationId(), any.accountId(),
+                    csv.printRecord(runId, any.businessDate(), any.correlationId(), any.accountId(),
                             any.securityId(), any.currency(),
                             r.dbs() == null ? null : r.dbs().executionId(),
                             r.quantifeed() == null ? null : r.quantifeed().executionId(),
                             r.dbs() == null ? null : r.dbs().rowNumber(),
                             r.quantifeed() == null ? null : r.quantifeed().rowNumber(),
-                            number(r.dbsValue()), number(r.quantifeedValue()), number(r.difference()),
-                            r.status(), r.breakType(), r.differenceDetails());
+                            r.status(), r.type(), r.breakType(), r.differenceDetails());
                 }
             }
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } finally {
             Files.deleteIfExists(tmp);
         }
-    }
-
-    /** Stable number format: no trailing zeros, no scientific notation (100.50 -> 100.5, 0.00 -> 0). */
-    private static String number(BigDecimal value) {
-        return value == null ? null : value.stripTrailingZeros().toPlainString();
     }
 }

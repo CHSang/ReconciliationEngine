@@ -1,7 +1,9 @@
 # Reconciliation Engine
 
 A command-line demo that reconciles DBS and Quantifeed records from two CSV files and writes the result to one CSV file.
-It handles three record types: `POSITION` (holdings), `TRANSACTION` (trades) and `CASH` (balances).
+Records are matched by `correlationId`, and each pair is checked in order: `POSITION` (security, quantity), then
+`TRANSACTION` (side, price, amount, currency, settlement date), then `CASH` (balance). The first check that finds a
+difference is reported as the break.
 
 Built with Java 21, Spring Boot 3.5 and Spring Batch. **No database or external service is needed.**
 
