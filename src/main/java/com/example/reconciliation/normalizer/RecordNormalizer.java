@@ -1,7 +1,6 @@
 package com.example.reconciliation.normalizer;
 
 import com.example.reconciliation.model.ReconciliationType;
-import com.example.reconciliation.model.RecordError;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import org.apache.commons.csv.CSVRecord;
@@ -18,7 +17,7 @@ import java.util.function.Function;
  * Validates and normalizes one CSV row. Same rules for both sources:
  * text is trimmed (blank = no value); sourceSystem, type, side and currency are uppercased;
  * numbers are exact BigDecimal; dates are yyyy-MM-dd; timestamps are ISO-8601 with offset, converted to UTC.
- * A row with any problem is rejected as a whole, and every problem in it is reported.
+ * A row with any invalid or missing required value is skipped.
  */
 public class RecordNormalizer {
 
@@ -39,52 +38,41 @@ public class RecordNormalizer {
         this.fileName = fileName;
     }
 
-    /** Returns the normalized record, or null after adding the row's problems to {@code errors}. */
-    public SourceRecord normalize(CSVRecord csv, List<RecordError> errors) {
-        Row f = new Row(csv, errors);
-        int errorsBefore = errors.size();
-
+    /** Returns the normalized record, or null if the row is invalid. */
+    public SourceRecord normalize(CSVRecord csv) {
         if (!csv.isConsistent()) {
-            f.error(null, "wrong number of columns: " + csv.size());
             return null;
         }
+        Row f = new Row(csv);
 
-        f.parse("sourceSystem", v -> upperMatching(v, source.name()), "expected " + source);
-        ReconciliationType type = f.parse("reconciliationType",
-                v -> ReconciliationType.valueOf(v.toUpperCase(Locale.ROOT)), "must be POSITION, TRANSACTION or CASH");
+        f.parse("sourceSystem", v -> upperMatching(v, source.name()));
+        ReconciliationType type = f.parse("reconciliationType", v -> ReconciliationType.valueOf(v.toUpperCase(Locale.ROOT)));
 
         SourceRecord record = new SourceRecord(
-                source, fileName, f.rowNumber(),
+                source, fileName, csv.getRecordNumber() + 1, // header is row 1
                 f.text("sourceBatchId"),
-                f.parse("businessDate", LocalDate::parse, "not a date in yyyy-MM-dd format"),
+                f.parse("businessDate", LocalDate::parse),
                 type,
                 f.text("accountId"),
                 f.text("transactionId"),
                 f.text("correlationId"),
                 f.text("executionId"),
                 f.text("securityId"),
-                f.parse("side", v -> upperMatching(v, "BUY|SELL"), "must be BUY or SELL"),
-                f.parse("quantity", BigDecimal::new, "not a number"),
-                f.parse("price", BigDecimal::new, "not a number"),
-                f.parse("amount", BigDecimal::new, "not a number"),
-                f.parse("currency", v -> upperMatching(v, "[A-Z]{3}"), "must be a 3-letter currency code"),
-                f.parse("balance", BigDecimal::new, "not a number"),
-                f.parse("settlementDate", LocalDate::parse, "not a date in yyyy-MM-dd format"),
-                f.parse("sourceCreatedAt", v -> OffsetDateTime.parse(v).toInstant(),
-                        "not an ISO-8601 timestamp with offset, e.g. 2026-10-28T09:30:00+08:00"),
+                f.parse("side", v -> upperMatching(v, "BUY|SELL")),
+                f.parse("quantity", BigDecimal::new),
+                f.parse("price", BigDecimal::new),
+                f.parse("amount", BigDecimal::new),
+                f.parse("currency", v -> upperMatching(v, "[A-Z]{3}")),
+                f.parse("balance", BigDecimal::new),
+                f.parse("settlementDate", LocalDate::parse),
+                f.parse("sourceCreatedAt", v -> OffsetDateTime.parse(v).toInstant()),
                 csv.toMap());
 
-        // Report blank required fields. Filled-in but invalid values already have an error.
-        for (String field : REQUIRED) {
-            f.required(field, "required");
-        }
+        REQUIRED.forEach(f::required);
         if (type != null) {
-            for (String field : REQUIRED_BY_TYPE.get(type)) {
-                f.required(field, "required for " + type);
-            }
+            REQUIRED_BY_TYPE.get(type).forEach(f::required);
         }
-
-        return errors.size() == errorsBefore ? record : null;
+        return f.valid ? record : null;
     }
 
     /** Uppercases the value and checks it against a regex; throws if it doesn't match. */
@@ -96,20 +84,14 @@ public class RecordNormalizer {
         return upper;
     }
 
-    /** One row's values, plus the error list to report problems to. */
-    private final class Row {
+    /** One row's values; {@code valid} turns false on the first bad or missing value. */
+    private static final class Row {
 
         private final CSVRecord csv;
-        private final List<RecordError> errors;
+        private boolean valid = true;
 
-        Row(CSVRecord csv, List<RecordError> errors) {
+        Row(CSVRecord csv) {
             this.csv = csv;
-            this.errors = errors;
-        }
-
-        /** Row number in the file, counting the header as row 1. */
-        long rowNumber() {
-            return csv.getRecordNumber() + 1;
         }
 
         /** Trimmed value, or null if blank. */
@@ -118,8 +100,8 @@ public class RecordNormalizer {
             return value.isEmpty() ? null : value;
         }
 
-        /** Parses a non-blank value; on failure records {@code reason} and returns null. */
-        <T> T parse(String field, Function<String, T> parser, String reason) {
+        /** Parses a non-blank value; marks the row invalid if it doesn't parse. */
+        <T> T parse(String field, Function<String, T> parser) {
             String value = text(field);
             if (value == null) {
                 return null;
@@ -127,19 +109,15 @@ public class RecordNormalizer {
             try {
                 return parser.apply(value);
             } catch (RuntimeException e) {
-                error(field, reason);
+                valid = false;
                 return null;
             }
         }
 
-        void required(String field, String reason) {
+        void required(String field) {
             if (text(field) == null) {
-                error(field, reason);
+                valid = false;
             }
-        }
-
-        void error(String field, String reason) {
-            errors.add(new RecordError(fileName, rowNumber(), field, field == null ? null : csv.get(field), reason));
         }
     }
 }

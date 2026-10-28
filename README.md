@@ -48,8 +48,7 @@ IntelliJ doesn't read `.sdkmanrc`, so point it at the Java 21 that SDKMAN instal
 
    Then click **Reload All Maven Projects** in the Maven tool window.
 4. **Run:** open `src/main/java/com/example/reconciliation/ReconciliationApplication.java` and click the green ▶ next
-   to `main`. Rejected rows show as warnings in the Run console, and the output goes to
-   `output/reconciliation-results.csv`.
+   to `main`. The output goes to `output/reconciliation-results.csv`.
 
 To use other files, add them under Run → Edit Configurations → **Program arguments**:
 

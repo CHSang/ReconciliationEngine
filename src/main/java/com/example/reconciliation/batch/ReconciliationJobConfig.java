@@ -2,7 +2,6 @@ package com.example.reconciliation.batch;
 
 import com.example.reconciliation.config.ReconciliationProperties;
 import com.example.reconciliation.matching.RecordMatcher;
-import com.example.reconciliation.model.RecordError;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import com.example.reconciliation.normalizer.RecordNormalizer;
@@ -121,21 +120,15 @@ public class ReconciliationJobConfig {
                 .build();
     }
 
-    /** Reads and normalizes one file. Rejected rows are logged as warnings so they are never silently lost. */
+    /** Reads and normalizes one file. Invalid rows are skipped. */
     private static List<SourceRecord> load(SourceSystem source, Path path, CsvRecordReader reader) throws IOException {
         RecordNormalizer normalizer = new RecordNormalizer(source, path.getFileName().toString());
         List<SourceRecord> records = new ArrayList<>();
-        List<RecordError> errors = new ArrayList<>();
-
         for (CSVRecord row : reader.read(path)) {
-            SourceRecord record = normalizer.normalize(row, errors);
+            SourceRecord record = normalizer.normalize(row);
             if (record != null) {
                 records.add(record);
             }
-        }
-        for (RecordError e : errors) {
-            log.warn("Rejected {} row {}: {}", e.fileName(), e.rowNumber(),
-                    e.field() == null ? e.reason() : e.field() + " = '" + e.value() + "': " + e.reason());
         }
         return records;
     }
