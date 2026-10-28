@@ -5,6 +5,8 @@ import com.example.reconciliation.matching.RecordMatcher;
 import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.RecordError;
 import com.example.reconciliation.model.RecordMatch;
+import com.example.reconciliation.model.ReconciliationResult;
+import com.example.reconciliation.service.RecordComparator;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import com.example.reconciliation.normalizer.RecordNormalizer;
@@ -29,8 +31,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reconciliation job: check input files exist, read and normalize both sources, then match them by correlationId.
- * Comparison and export steps come in later phases.
+ * Reconciliation job: check input files exist, read and normalize both sources, match them by correlationId,
+ * then compare each pair. The CSV export step comes in a later phase.
  */
 @Configuration
 public class ReconciliationJobConfig {
@@ -38,11 +40,36 @@ public class ReconciliationJobConfig {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationJobConfig.class);
 
     @Bean
-    public Job reconciliationJob(JobRepository jobRepository, Step validateInputStep, Step normalizeInputStep, Step matchStep) {
+    public Job reconciliationJob(JobRepository jobRepository, Step validateInputStep, Step normalizeInputStep,
+                                 Step matchStep, Step compareStep) {
         return new JobBuilder("reconciliationJob", jobRepository)
                 .start(validateInputStep)
                 .next(normalizeInputStep)
                 .next(matchStep)
+                .next(compareStep)
+                .build();
+    }
+
+    @Bean
+    public Step compareStep(JobRepository jobRepository,
+                            PlatformTransactionManager transactionManager,
+                            RecordComparator comparator,
+                            RunData runData) {
+        return new StepBuilder("compareStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    List<ReconciliationResult> results = runData.matches().stream().map(comparator::compare).toList();
+                    runData.setResults(results);
+
+                    for (ReconciliationType type : ReconciliationType.values()) {
+                        List<ReconciliationResult> ofType = results.stream().filter(r -> r.any().type() == type).toList();
+                        log.info("{}: matched {}, breaks {}", type,
+                                ofType.stream().filter(r -> r.status() == ReconciliationResult.Status.MATCHED).count(),
+                                ofType.stream().filter(r -> r.status() == ReconciliationResult.Status.BREAK).count());
+                    }
+                    results.stream().filter(r -> r.status() == ReconciliationResult.Status.BREAK).forEach(r ->
+                            log.info("BREAK {} {} {}: {}", r.any().type(), r.any().correlationId(), r.breakType(), r.differenceDetails()));
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
                 .build();
     }
 
