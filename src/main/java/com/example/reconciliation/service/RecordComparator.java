@@ -68,8 +68,13 @@ public class RecordComparator {
         if (same) {
             return breakType;
         }
-        details.add(field + ": " + dbs + " vs " + qf);
+        details.add(field + ": " + text(dbs) + " vs " + text(qf));
         return breakType != null ? breakType : fieldBreakType;
+    }
+
+    /** Same number format as the CSV value columns: 25.50 -> 25.5. */
+    private static String text(Object value) {
+        return value instanceof BigDecimal d ? d.stripTrailingZeros().toPlainString() : String.valueOf(value);
     }
 
     /** The value shown in the dbsValue / quantifeedValue / difference columns. */
