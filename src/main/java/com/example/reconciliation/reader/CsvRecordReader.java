@@ -16,7 +16,7 @@ public class CsvRecordReader {
 
     public static final List<String> COLUMNS = List.of(
             "sourceSystem", "sourceBatchId", "businessDate", "reconciliationType", "accountId", "transactionId",
-            "correlationId", "executionId", "referenceId", "securityId", "side", "quantity", "price", "amount",
+            "correlationId", "executionId", "securityId", "side", "quantity", "price", "amount",
             "currency", "balance", "settlementDate", "sourceCreatedAt");
 
     private static final CSVFormat FORMAT = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).get();

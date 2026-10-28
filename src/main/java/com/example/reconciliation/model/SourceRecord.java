@@ -22,7 +22,6 @@ public record SourceRecord(
         String transactionId,
         String correlationId,
         String executionId,
-        String referenceId,
         String securityId,
         String side,
         BigDecimal quantity,

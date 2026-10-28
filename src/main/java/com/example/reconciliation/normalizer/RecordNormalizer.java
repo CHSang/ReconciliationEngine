@@ -62,7 +62,6 @@ public class RecordNormalizer {
                 f.text("transactionId"),
                 f.text("correlationId"),
                 f.text("executionId"),
-                f.text("referenceId"),
                 f.text("securityId"),
                 f.parse("side", v -> upperMatching(v, "BUY|SELL"), "must be BUY or SELL"),
                 f.parse("quantity", BigDecimal::new, "not a number"),

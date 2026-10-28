@@ -21,7 +21,7 @@ import java.util.List;
 public class ResultWriter {
 
     private static final String[] HEADER = {
-            "runId", "businessDate", "reconciliationType", "correlationId", "accountId", "referenceId", "securityId",
+            "runId", "businessDate", "reconciliationType", "correlationId", "accountId", "securityId",
             "currency", "dbsExecutionId", "quantifeedExecutionId", "dbsSourceRowNumber", "quantifeedSourceRowNumber",
             "dbsValue", "quantifeedValue", "difference", "status", "breakType", "differenceDetails"};
 
@@ -34,7 +34,7 @@ public class ResultWriter {
                 for (ReconciliationResult r : results) {
                     SourceRecord any = r.any();
                     csv.printRecord(runId, any.businessDate(), any.type(), any.correlationId(), any.accountId(),
-                            any.referenceId(), any.securityId(), any.currency(),
+                            any.securityId(), any.currency(),
                             r.dbs() == null ? null : r.dbs().executionId(),
                             r.quantifeed() == null ? null : r.quantifeed().executionId(),
                             r.dbs() == null ? null : r.dbs().rowNumber(),
