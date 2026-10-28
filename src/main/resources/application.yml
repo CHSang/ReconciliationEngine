@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: reconciliation-engine
+  main:
+    banner-mode: off
+
+reconciliation:
+  input:
+    dbs: ./input/dbs-records.csv
+    quantifeed: ./input/quantifeed-records.csv
+  output:
+    file: ./output/reconciliation-results.csv
+    error-file: ./output/reconciliation-errors.csv
