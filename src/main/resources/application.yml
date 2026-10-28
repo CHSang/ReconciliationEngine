@@ -10,4 +10,3 @@ reconciliation:
     quantifeed: ./input/quantifeed-records.csv
   output:
     file: ./output/reconciliation-results.csv
-    error-file: ./output/reconciliation-errors.csv

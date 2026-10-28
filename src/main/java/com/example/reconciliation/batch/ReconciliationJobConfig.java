@@ -2,15 +2,13 @@ package com.example.reconciliation.batch;
 
 import com.example.reconciliation.config.ReconciliationProperties;
 import com.example.reconciliation.matching.RecordMatcher;
-import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.RecordError;
-import com.example.reconciliation.model.RecordMatch;
-import com.example.reconciliation.model.ReconciliationResult;
-import com.example.reconciliation.service.RecordComparator;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import com.example.reconciliation.normalizer.RecordNormalizer;
 import com.example.reconciliation.reader.CsvRecordReader;
+import com.example.reconciliation.service.RecordComparator;
+import com.example.reconciliation.writer.ResultWriter;
 import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,8 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reconciliation job: check input files exist, read and normalize both sources, match them by correlationId,
- * then compare each pair. The CSV export step comes in a later phase.
+ * Reconciliation job, in order:
+ * check input files -> read and normalize both sources -> match by correlationId -> compare -> write results CSV.
  */
 @Configuration
 public class ReconciliationJobConfig {
@@ -41,58 +39,13 @@ public class ReconciliationJobConfig {
 
     @Bean
     public Job reconciliationJob(JobRepository jobRepository, Step validateInputStep, Step normalizeInputStep,
-                                 Step matchStep, Step compareStep) {
+                                 Step matchStep, Step compareStep, Step exportStep) {
         return new JobBuilder("reconciliationJob", jobRepository)
                 .start(validateInputStep)
                 .next(normalizeInputStep)
                 .next(matchStep)
                 .next(compareStep)
-                .build();
-    }
-
-    @Bean
-    public Step compareStep(JobRepository jobRepository,
-                            PlatformTransactionManager transactionManager,
-                            RecordComparator comparator,
-                            RunData runData) {
-        return new StepBuilder("compareStep", jobRepository)
-                .tasklet((contribution, chunkContext) -> {
-                    List<ReconciliationResult> results = runData.matches().stream().map(comparator::compare).toList();
-                    runData.setResults(results);
-
-                    for (ReconciliationType type : ReconciliationType.values()) {
-                        List<ReconciliationResult> ofType = results.stream().filter(r -> r.any().type() == type).toList();
-                        log.info("{}: matched {}, breaks {}", type,
-                                ofType.stream().filter(r -> r.status() == ReconciliationResult.Status.MATCHED).count(),
-                                ofType.stream().filter(r -> r.status() == ReconciliationResult.Status.BREAK).count());
-                    }
-                    results.stream().filter(r -> r.status() == ReconciliationResult.Status.BREAK).forEach(r ->
-                            log.info("BREAK {} {} {}: {}", r.any().type(), r.any().correlationId(), r.breakType(), r.differenceDetails()));
-                    return RepeatStatus.FINISHED;
-                }, transactionManager)
-                .build();
-    }
-
-    @Bean
-    public Step matchStep(JobRepository jobRepository,
-                          PlatformTransactionManager transactionManager,
-                          RecordMatcher matcher,
-                          RunData runData) {
-        return new StepBuilder("matchStep", jobRepository)
-                .tasklet((contribution, chunkContext) -> {
-                    List<RecordMatch> matches = matcher.match(
-                            runData.get(SourceSystem.DBS).records(), runData.get(SourceSystem.QUANTIFEED).records());
-                    runData.setMatches(matches);
-
-                    for (ReconciliationType type : ReconciliationType.values()) {
-                        List<RecordMatch> ofType = matches.stream().filter(m -> m.any().type() == type).toList();
-                        log.info("{}: pairs {}, missing in Quantifeed {}, missing in DBS {}", type,
-                                ofType.stream().filter(RecordMatch::isPair).count(),
-                                ofType.stream().filter(m -> m.quantifeed() == null).count(),
-                                ofType.stream().filter(m -> m.dbs() == null).count());
-                    }
-                    return RepeatStatus.FINISHED;
-                }, transactionManager)
+                .next(exportStep)
                 .build();
     }
 
@@ -117,41 +70,74 @@ public class ReconciliationJobConfig {
                                    RunData runData) {
         return new StepBuilder("normalizeInputStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
-                    runData.put(SourceSystem.DBS, load(SourceSystem.DBS, properties.input().dbs(), reader));
-                    runData.put(SourceSystem.QUANTIFEED, load(SourceSystem.QUANTIFEED, properties.input().quantifeed(), reader));
+                    runData.setRecords(SourceSystem.DBS, load(SourceSystem.DBS, properties.input().dbs(), reader));
+                    runData.setRecords(SourceSystem.QUANTIFEED, load(SourceSystem.QUANTIFEED, properties.input().quantifeed(), reader));
                     return RepeatStatus.FINISHED;
                 }, transactionManager)
                 .build();
     }
 
-    private static RunData.Loaded load(SourceSystem source, Path path, CsvRecordReader reader) throws IOException {
-        String fileName = path.getFileName().toString();
-        RecordNormalizer normalizer = new RecordNormalizer(source, fileName);
+    @Bean
+    public Step matchStep(JobRepository jobRepository,
+                          PlatformTransactionManager transactionManager,
+                          RecordMatcher matcher,
+                          RunData runData) {
+        return new StepBuilder("matchStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    runData.setMatches(matcher.match(
+                            runData.records(SourceSystem.DBS), runData.records(SourceSystem.QUANTIFEED)));
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
+                .build();
+    }
 
-        List<CSVRecord> rows = reader.read(path);
+    @Bean
+    public Step compareStep(JobRepository jobRepository,
+                            PlatformTransactionManager transactionManager,
+                            RecordComparator comparator,
+                            RunData runData) {
+        return new StepBuilder("compareStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    runData.setResults(runData.matches().stream().map(comparator::compare).toList());
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
+                .build();
+    }
+
+    @Bean
+    public Step exportStep(JobRepository jobRepository,
+                           PlatformTransactionManager transactionManager,
+                           ReconciliationProperties properties,
+                           ResultWriter writer,
+                           RunData runData) {
+        return new StepBuilder("exportStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    String runId = (String) chunkContext.getStepContext().getJobParameters().get("runId");
+                    Path file = properties.output().file();
+                    writer.write(runId, runData.results(), file);
+                    log.info("Wrote {} results to {}", runData.results().size(), file.toAbsolutePath().normalize());
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
+                .build();
+    }
+
+    /** Reads and normalizes one file. Rejected rows are logged as warnings so they are never silently lost. */
+    private static List<SourceRecord> load(SourceSystem source, Path path, CsvRecordReader reader) throws IOException {
+        RecordNormalizer normalizer = new RecordNormalizer(source, path.getFileName().toString());
         List<SourceRecord> records = new ArrayList<>();
         List<RecordError> errors = new ArrayList<>();
-        int rejectedRows = 0;
 
-        for (CSVRecord row : rows) {
+        for (CSVRecord row : reader.read(path)) {
             SourceRecord record = normalizer.normalize(row, errors);
             if (record != null) {
                 records.add(record);
-            } else {
-                rejectedRows++;
             }
         }
-
-        log.info("{} ({}): rows read {}, normalized {}, rejected {}",
-                source, fileName, rows.size(), records.size(), rejectedRows);
         for (RecordError e : errors) {
-            if (e.field() == null) {
-                log.warn("Rejected {} row {}: {}", e.fileName(), e.rowNumber(), e.reason());
-            } else {
-                log.warn("Rejected {} row {}: {} = '{}': {}", e.fileName(), e.rowNumber(), e.field(), e.value(), e.reason());
-            }
+            log.warn("Rejected {} row {}: {}", e.fileName(), e.rowNumber(),
+                    e.field() == null ? e.reason() : e.field() + " = '" + e.value() + "': " + e.reason());
         }
-        return new RunData.Loaded(fileName, rows.size(), records, rejectedRows, errors);
+        return records;
     }
 
     private static void requireReadableFile(String source, Path path) {

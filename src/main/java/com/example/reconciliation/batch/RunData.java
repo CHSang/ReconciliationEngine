@@ -1,6 +1,5 @@
 package com.example.reconciliation.batch;
 
-import com.example.reconciliation.model.RecordError;
 import com.example.reconciliation.model.RecordMatch;
 import com.example.reconciliation.model.ReconciliationResult;
 import com.example.reconciliation.model.SourceRecord;
@@ -15,20 +14,16 @@ import java.util.Map;
 @Component
 public class RunData {
 
-    /** One source after reading and normalizing. rowsRead = records + rejectedRows. */
-    public record Loaded(String fileName, int rowsRead, List<SourceRecord> records, int rejectedRows, List<RecordError> errors) {
-    }
-
-    private final Map<SourceSystem, Loaded> sources = new EnumMap<>(SourceSystem.class);
+    private final Map<SourceSystem, List<SourceRecord>> records = new EnumMap<>(SourceSystem.class);
     private List<RecordMatch> matches = List.of();
     private List<ReconciliationResult> results = List.of();
 
-    public void put(SourceSystem source, Loaded loaded) {
-        sources.put(source, loaded);
+    public void setRecords(SourceSystem source, List<SourceRecord> sourceRecords) {
+        records.put(source, List.copyOf(sourceRecords));
     }
 
-    public Loaded get(SourceSystem source) {
-        return sources.get(source);
+    public List<SourceRecord> records(SourceSystem source) {
+        return records.get(source);
     }
 
     public List<RecordMatch> matches() {

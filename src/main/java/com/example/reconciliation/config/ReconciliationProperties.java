@@ -11,6 +11,6 @@ public record ReconciliationProperties(Input input, Output output) {
     public record Input(Path dbs, Path quantifeed) {
     }
 
-    public record Output(Path file, Path errorFile) {
+    public record Output(Path file) {
     }
 }
