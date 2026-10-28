@@ -17,7 +17,9 @@ public record ReconciliationResult(
 
     public enum Status {
         MATCHED,
-        BREAK
+        BREAK,
+        /** Expected difference that should clear by itself, e.g. a trade not yet settled in DBS. */
+        PENDING
     }
 
     /** Either side's record, for reading the shared key fields. */

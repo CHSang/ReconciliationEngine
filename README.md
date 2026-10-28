@@ -5,6 +5,17 @@ Records are matched by `correlationId`, and each pair is checked in order: `POSI
 `TRANSACTION` (side, price, amount, currency, settlement date), then `CASH` (balance). The first check that finds a
 difference is reported as the break.
 
+A trade can appear in one system before the other until it settles (e.g. T+2). So a record found in only one system
+is `PENDING` (`AWAITING_SETTLEMENT`) while its `businessDate` + `settlement-days` is after the run date. After that it
+is a `BREAK` (`MISSING_IN_DBS` or `MISSING_IN_QUANTIFEED`).
+
+Both settings are in `application.yml`: `settlement-days` (default `2`) and `run-date` (default today). For example,
+to reproduce the sample results on any day:
+
+```bash
+java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar --reconciliation.run-date=2026-10-28
+```
+
 Built with Java 21, Spring Boot 3.5 and Spring Batch. **No database or external service is needed.**
 
 ## Build and run

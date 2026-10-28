@@ -10,3 +10,7 @@ reconciliation:
     quantifeed: ./input/quantifeed-records.csv
   output:
     file: ./output/reconciliation-results.csv
+
+  # A trade found in only one system is PENDING until businessDate + settlement-days, then a BREAK.
+  settlement-days: 2
+  # run-date: 2026-10-28    # date the reconciliation runs for; today when not set

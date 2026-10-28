@@ -1,5 +1,6 @@
 package com.example.reconciliation.service;
 
+import com.example.reconciliation.config.ReconciliationProperties;
 import com.example.reconciliation.model.RecordMatch;
 import com.example.reconciliation.model.ReconciliationResult;
 import com.example.reconciliation.model.ReconciliationResult.Status;
@@ -8,6 +9,7 @@ import com.example.reconciliation.model.SourceRecord;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -16,19 +18,29 @@ import java.util.Objects;
  * Reconciles each DBS/Quantifeed pair with three checks in order, stopping at the first one that finds a difference:
  * POSITION (securityId, quantity), then TRANSACTION (side, price, amount, currency, settlementDate), then CASH (balance).
  * Numbers are compared by value (100.50 equals 100.5).
+ * A record found in only one system is PENDING (AWAITING_SETTLEMENT) until its businessDate + settlement-days,
+ * because the other system may only book it at settlement (e.g. T+2). After that it is a MISSING_IN_... break.
  */
 @Component
 public class RecordComparator {
+
+    private final int settlementDays;
+    private final LocalDate runDate;
+
+    public RecordComparator(ReconciliationProperties properties) {
+        this.settlementDays = properties.settlementDays();
+        this.runDate = properties.runDateOrToday();
+    }
 
     public ReconciliationResult compare(RecordMatch match) {
         SourceRecord dbs = match.dbs();
         SourceRecord qf = match.quantifeed();
 
         if (dbs == null) {
-            return new ReconciliationResult(null, qf, Status.BREAK, null, "MISSING_IN_DBS", "");
+            return missing(null, qf, "MISSING_IN_DBS");
         }
         if (qf == null) {
-            return new ReconciliationResult(dbs, null, Status.BREAK, null, "MISSING_IN_QUANTIFEED", "");
+            return missing(dbs, null, "MISSING_IN_QUANTIFEED");
         }
 
         List<String> details = new ArrayList<>();
@@ -55,6 +67,16 @@ public class RecordComparator {
         }
 
         return new ReconciliationResult(dbs, qf, Status.MATCHED, null, null, "");
+    }
+
+    /** One-sided record: PENDING while still inside the settlement window, otherwise a BREAK. */
+    private ReconciliationResult missing(SourceRecord dbs, SourceRecord qf, String breakType) {
+        SourceRecord record = dbs != null ? dbs : qf;
+        LocalDate expectedBy = record.businessDate() == null ? null : record.businessDate().plusDays(settlementDays);
+        if (expectedBy != null && expectedBy.isAfter(runDate)) {
+            return new ReconciliationResult(dbs, qf, Status.PENDING, null, "AWAITING_SETTLEMENT", "expected by " + expectedBy);
+        }
+        return new ReconciliationResult(dbs, qf, Status.BREAK, null, breakType, "");
     }
 
     private static ReconciliationResult breakResult(SourceRecord dbs, SourceRecord qf, ReconciliationType type,
