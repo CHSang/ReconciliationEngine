@@ -23,9 +23,9 @@ import java.util.function.Function;
 public class RecordNormalizer {
 
     private static final List<String> REQUIRED =
-            List.of("sourceSystem", "reconciliationType", "sourceBatchId", "businessDate", "accountId");
+            List.of("sourceSystem", "reconciliationType", "sourceBatchId", "businessDate", "accountId", "correlationId");
 
-    /** Extra fields each type needs. correlationId is checked during matching instead. */
+    /** Extra fields each type needs. */
     private static final Map<ReconciliationType, List<String>> REQUIRED_BY_TYPE = Map.of(
             ReconciliationType.POSITION, List.of("securityId", "quantity"),
             ReconciliationType.TRANSACTION, List.of("securityId", "side", "quantity", "price", "amount", "currency", "settlementDate"),

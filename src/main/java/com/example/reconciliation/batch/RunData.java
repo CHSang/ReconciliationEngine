@@ -1,6 +1,7 @@
 package com.example.reconciliation.batch;
 
 import com.example.reconciliation.model.RecordError;
+import com.example.reconciliation.model.RecordMatch;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ public class RunData {
     }
 
     private final Map<SourceSystem, Loaded> sources = new EnumMap<>(SourceSystem.class);
+    private List<RecordMatch> matches = List.of();
 
     public void put(SourceSystem source, Loaded loaded) {
         sources.put(source, loaded);
@@ -25,5 +27,13 @@ public class RunData {
 
     public Loaded get(SourceSystem source) {
         return sources.get(source);
+    }
+
+    public List<RecordMatch> matches() {
+        return matches;
+    }
+
+    public void setMatches(List<RecordMatch> matches) {
+        this.matches = List.copyOf(matches);
     }
 }

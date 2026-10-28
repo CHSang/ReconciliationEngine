@@ -1,7 +1,10 @@
 package com.example.reconciliation.batch;
 
 import com.example.reconciliation.config.ReconciliationProperties;
+import com.example.reconciliation.matching.RecordMatcher;
+import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.RecordError;
+import com.example.reconciliation.model.RecordMatch;
 import com.example.reconciliation.model.SourceRecord;
 import com.example.reconciliation.model.SourceSystem;
 import com.example.reconciliation.normalizer.RecordNormalizer;
@@ -26,8 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reconciliation job: check input files exist, then read and normalize both sources.
- * Matching, comparison and export steps come in later phases.
+ * Reconciliation job: check input files exist, read and normalize both sources, then match them by correlationId.
+ * Comparison and export steps come in later phases.
  */
 @Configuration
 public class ReconciliationJobConfig {
@@ -35,10 +38,34 @@ public class ReconciliationJobConfig {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationJobConfig.class);
 
     @Bean
-    public Job reconciliationJob(JobRepository jobRepository, Step validateInputStep, Step normalizeInputStep) {
+    public Job reconciliationJob(JobRepository jobRepository, Step validateInputStep, Step normalizeInputStep, Step matchStep) {
         return new JobBuilder("reconciliationJob", jobRepository)
                 .start(validateInputStep)
                 .next(normalizeInputStep)
+                .next(matchStep)
+                .build();
+    }
+
+    @Bean
+    public Step matchStep(JobRepository jobRepository,
+                          PlatformTransactionManager transactionManager,
+                          RecordMatcher matcher,
+                          RunData runData) {
+        return new StepBuilder("matchStep", jobRepository)
+                .tasklet((contribution, chunkContext) -> {
+                    List<RecordMatch> matches = matcher.match(
+                            runData.get(SourceSystem.DBS).records(), runData.get(SourceSystem.QUANTIFEED).records());
+                    runData.setMatches(matches);
+
+                    for (ReconciliationType type : ReconciliationType.values()) {
+                        List<RecordMatch> ofType = matches.stream().filter(m -> m.any().type() == type).toList();
+                        log.info("{}: pairs {}, missing in Quantifeed {}, missing in DBS {}", type,
+                                ofType.stream().filter(RecordMatch::isPair).count(),
+                                ofType.stream().filter(m -> m.quantifeed() == null).count(),
+                                ofType.stream().filter(m -> m.dbs() == null).count());
+                    }
+                    return RepeatStatus.FINISHED;
+                }, transactionManager)
                 .build();
     }
 
