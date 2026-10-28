@@ -8,27 +8,17 @@ import org.apache.commons.csv.CSVRecord;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.function.Function;
 
 /**
  * Validates and normalizes one CSV row. Same rules for both sources:
  * text is trimmed (blank = no value); sourceSystem, type, side and currency are uppercased;
  * numbers are exact BigDecimal; dates are yyyy-MM-dd; timestamps are ISO-8601 with offset, converted to UTC.
- * A row with any invalid or missing required value is skipped.
+ * A row with any invalid value is skipped. Blank values are not checked: input files must fill in every field
+ * a record's type uses.
  */
 public class RecordNormalizer {
-
-    private static final List<String> REQUIRED =
-            List.of("sourceSystem", "reconciliationType", "sourceBatchId", "businessDate", "accountId", "correlationId");
-
-    /** Extra fields each type needs. */
-    private static final Map<ReconciliationType, List<String>> REQUIRED_BY_TYPE = Map.of(
-            ReconciliationType.POSITION, List.of("securityId", "quantity"),
-            ReconciliationType.TRANSACTION, List.of("securityId", "side", "quantity", "price", "amount", "currency", "settlementDate"),
-            ReconciliationType.CASH, List.of("currency", "balance"));
 
     private final SourceSystem source;
     private final String fileName;
@@ -68,10 +58,6 @@ public class RecordNormalizer {
                 f.parse("sourceCreatedAt", v -> OffsetDateTime.parse(v).toInstant()),
                 csv.toMap());
 
-        REQUIRED.forEach(f::required);
-        if (type != null) {
-            REQUIRED_BY_TYPE.get(type).forEach(f::required);
-        }
         return f.valid ? record : null;
     }
 
@@ -84,7 +70,7 @@ public class RecordNormalizer {
         return upper;
     }
 
-    /** One row's values; {@code valid} turns false on the first bad or missing value. */
+    /** One row's values; {@code valid} turns false on the first value that doesn't parse. */
     private static final class Row {
 
         private final CSVRecord csv;
@@ -111,12 +97,6 @@ public class RecordNormalizer {
             } catch (RuntimeException e) {
                 valid = false;
                 return null;
-            }
-        }
-
-        void required(String field) {
-            if (text(field) == null) {
-                valid = false;
             }
         }
     }
