@@ -47,6 +47,18 @@ java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar \
 The defaults are in `src/main/resources/application.yml`. Exit code `0` means the run completed (breaks are normal
 results). `1` means it failed, for example on a missing file or missing columns.
 
+## Retrying a failed step
+
+A step that fails is tried again before the run fails: 3 attempts in total, 2 seconds apart. Each retry is logged, for
+example `Retrying exportStep (attempt 2 of 3) after error: ...`. This covers short-lived problems such as an input file
+still being copied in. Change it under `reconciliation.retry` in `application.yml`, or on the command line:
+
+```bash
+java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar --reconciliation.retry.max-attempts=5 --reconciliation.retry.delay=10s
+```
+
+`max-attempts: 1` turns retry off. If every attempt fails, the run fails and the next start resumes it (see below).
+
 ## Resuming a failed run
 
 If a run fails, the next start continues it from the step that failed. The steps that already completed are skipped,
