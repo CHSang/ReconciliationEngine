@@ -49,9 +49,19 @@ results). `1` means it failed, for example on a missing file or missing columns.
 
 ## Retrying a failed step
 
-A step that fails is tried again before the run fails: 3 attempts in total, 2 seconds apart. Each retry is logged, for
-example `Retrying exportStep (attempt 2 of 3) after error: ...`. This covers short-lived problems such as an input file
-still being copied in. Change it under `reconciliation.retry` in `application.yml`, or on the command line:
+Each step retries only the errors that can clear up by themselves: 3 attempts in total, 2 seconds apart. Any other
+error fails the step at once.
+
+| Step | Retried | Not retried (fails at once) |
+|---|---|---|
+| `validateInputStep` | input file not found or not readable (may still be arriving) | input path not configured |
+| `normalizeInputStep` | I/O error reading a file | missing columns, malformed CSV |
+| `matchStep` | nothing (works on data in memory) | e.g. duplicate `correlationId` |
+| `compareStep` | nothing (works on data in memory) | any error |
+| `exportStep` | I/O error writing the output (folder locked, disk full) | any other error |
+
+Each retry is logged, for example `Retrying exportStep (attempt 2 of 3) after error: ...`. Change the attempts and delay
+under `reconciliation.retry` in `application.yml`, or on the command line:
 
 ```bash
 java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar --reconciliation.retry.max-attempts=5 --reconciliation.retry.delay=10s

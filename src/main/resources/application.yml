@@ -25,7 +25,8 @@ reconciliation:
   settlement-days: 2
   # run-date: 2026-10-28    # date the reconciliation runs for; today when not set
 
-  # A failing step is tried max-attempts times in total, waiting delay between attempts. 1 turns retry off.
+  # A step failing with an error it lists as retryable (see ReconciliationJobConfig) is tried max-attempts times
+  # in total, waiting delay between attempts. Other errors fail at once. 1 turns retry off.
   retry:
     max-attempts: 3
     delay: 2s

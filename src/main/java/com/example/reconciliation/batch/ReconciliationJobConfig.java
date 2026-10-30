@@ -24,7 +24,9 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,23 +34,18 @@ import java.util.List;
 /**
  * Reconciliation job, in order:
  * check input files -> read and normalize both sources -> match by correlationId -> compare -> write results CSV.
- * A failing step is retried a few times (see {@link #withRetry}). Each step's output is saved with the run
- * (see {@link RunData}), so a run that still fails can resume at the step that failed.
+ * Each step lists the errors worth retrying (see {@link #withRetry}); any other error fails it at once. Each step's
+ * output is saved with the run (see {@link RunData}), so a run that still fails can resume at the step that failed.
  */
 @Configuration
 public class ReconciliationJobConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ReconciliationJobConfig.class);
 
-    private final int maxAttempts;
-    private final RetryTemplate retryTemplate;
+    private final ReconciliationProperties.Retry retrySettings;
 
     public ReconciliationJobConfig(ReconciliationProperties properties) {
-        this.maxAttempts = properties.retry().maxAttempts();
-        this.retryTemplate = RetryTemplate.builder()
-                .maxAttempts(maxAttempts)
-                .fixedBackoff(properties.retry().delay())
-                .build();
+        this.retrySettings = properties.retry();
     }
 
     @Bean
@@ -68,7 +65,8 @@ public class ReconciliationJobConfig {
                                   PlatformTransactionManager transactionManager,
                                   ReconciliationProperties properties) {
         return new StepBuilder("validateInputStep", jobRepository)
-                .tasklet(withRetry((contribution, chunkContext) -> {
+                // Retry: an input file may still be arriving or briefly locked.
+                .tasklet(withRetry(List.of(NoSuchFileException.class, AccessDeniedException.class), (contribution, chunkContext) -> {
                     requireReadableFile("DBS", properties.input().dbs());
                     requireReadableFile("Quantifeed", properties.input().quantifeed());
                     return RepeatStatus.FINISHED;
@@ -82,7 +80,8 @@ public class ReconciliationJobConfig {
                                    ReconciliationProperties properties,
                                    CsvRecordReader reader) {
         return new StepBuilder("normalizeInputStep", jobRepository)
-                .tasklet(withRetry((contribution, chunkContext) -> {
+                // Retry: reading a file can fail for a moment. Missing columns or a malformed CSV fail at once.
+                .tasklet(withRetry(List.of(IOException.class), (contribution, chunkContext) -> {
                     RunData runData = RunData.of(chunkContext);
                     runData.setRecords(SourceSystem.DBS, load(SourceSystem.DBS, properties.input().dbs(), reader));
                     runData.setRecords(SourceSystem.QUANTIFEED, load(SourceSystem.QUANTIFEED, properties.input().quantifeed(), reader));
@@ -96,12 +95,13 @@ public class ReconciliationJobConfig {
                           PlatformTransactionManager transactionManager,
                           RecordMatcher matcher) {
         return new StepBuilder("matchStep", jobRepository)
-                .tasklet(withRetry((contribution, chunkContext) -> {
+                // No retry: works on data in memory, so an error (e.g. duplicate correlationId) would just repeat.
+                .tasklet((contribution, chunkContext) -> {
                     RunData runData = RunData.of(chunkContext);
                     runData.setMatches(matcher.match(
                             runData.records(SourceSystem.DBS), runData.records(SourceSystem.QUANTIFEED)));
                     return RepeatStatus.FINISHED;
-                }), transactionManager)
+                }, transactionManager)
                 .build();
     }
 
@@ -109,7 +109,8 @@ public class ReconciliationJobConfig {
     public Step compareStep(JobRepository jobRepository,
                             PlatformTransactionManager transactionManager) {
         return new StepBuilder("compareStep", jobRepository)
-                .tasklet(withRetry((contribution, chunkContext) -> {
+                // No retry: works on data in memory, so an error would just repeat.
+                .tasklet((contribution, chunkContext) -> {
                     // Settings saved with the run, so a resumed run compares with the values it started with.
                     RunSettings settings = RunSettings.from(
                             chunkContext.getStepContext().getStepExecution().getJobParameters());
@@ -117,7 +118,7 @@ public class ReconciliationJobConfig {
                     RunData runData = RunData.of(chunkContext);
                     runData.setResults(runData.matches().stream().map(comparator::compare).toList());
                     return RepeatStatus.FINISHED;
-                }), transactionManager)
+                }, transactionManager)
                 .build();
     }
 
@@ -127,7 +128,8 @@ public class ReconciliationJobConfig {
                            ReconciliationProperties properties,
                            ResultWriter writer) {
         return new StepBuilder("exportStep", jobRepository)
-                .tasklet(withRetry((contribution, chunkContext) -> {
+                // Retry: writing can fail for a moment (folder locked, disk full).
+                .tasklet(withRetry(List.of(IOException.class), (contribution, chunkContext) -> {
                     RunData runData = RunData.of(chunkContext);
                     String runId = (String) chunkContext.getStepContext().getJobParameters().get("runId");
                     Path file = properties.output().file();
@@ -138,12 +140,20 @@ public class ReconciliationJobConfig {
                 .build();
     }
 
-    /** Runs the tasklet again when it throws, up to retry.max-attempts in total, then lets the step fail. */
-    private Tasklet withRetry(Tasklet tasklet) {
+    /**
+     * Runs the tasklet again when it throws one of {@code retryOn} (or a subclass), up to retry.max-attempts in total,
+     * waiting retry.delay between attempts. Any other error fails the step at once.
+     */
+    private Tasklet withRetry(List<Class<? extends Throwable>> retryOn, Tasklet tasklet) {
+        RetryTemplate retryTemplate = RetryTemplate.builder()
+                .maxAttempts(retrySettings.maxAttempts())
+                .fixedBackoff(retrySettings.delay())
+                .retryOn(retryOn)
+                .build();
         return (contribution, chunkContext) -> retryTemplate.execute(retry -> {
             if (retry.getRetryCount() > 0) {
                 log.warn("Retrying {} (attempt {} of {}) after error: {}", chunkContext.getStepContext().getStepName(),
-                        retry.getRetryCount() + 1, maxAttempts, retry.getLastThrowable().toString());
+                        retry.getRetryCount() + 1, retrySettings.maxAttempts(), retry.getLastThrowable().toString());
             }
             return tasklet.execute(contribution, chunkContext);
         });
@@ -162,12 +172,15 @@ public class ReconciliationJobConfig {
         return records;
     }
 
-    private static void requireReadableFile(String source, Path path) {
+    private static void requireReadableFile(String source, Path path) throws IOException {
         if (path == null) {
             throw new IllegalStateException(source + " input path is not configured");
         }
-        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
-            throw new IllegalStateException(source + " input file not found or not readable: " + path.toAbsolutePath());
+        if (!Files.isRegularFile(path)) {
+            throw new NoSuchFileException(path.toAbsolutePath().toString(), null, source + " input file not found");
+        }
+        if (!Files.isReadable(path)) {
+            throw new AccessDeniedException(path.toAbsolutePath().toString(), null, source + " input file not readable");
         }
         log.info("{} input file: {}", source, path.toAbsolutePath());
     }
