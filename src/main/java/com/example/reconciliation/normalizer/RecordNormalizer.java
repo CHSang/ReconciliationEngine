@@ -48,8 +48,7 @@ public class RecordNormalizer {
                 f.parse("currency", v -> upperMatching(v, "[A-Z]{3}")),
                 f.parse("balance", BigDecimal::new),
                 f.parse("settlementDate", LocalDate::parse),
-                f.parse("sourceCreatedAt", v -> OffsetDateTime.parse(v).toInstant()),
-                csv.toMap());
+                f.parse("sourceCreatedAt", v -> OffsetDateTime.parse(v).toInstant()));
 
         return f.valid ? record : null;
     }

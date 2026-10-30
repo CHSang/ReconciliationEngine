@@ -29,6 +29,9 @@ target/
 # Generated reconciliation output
 output/
 
+# Run history database (for resuming failed runs)
+work/
+
 # IDE
 .idea/
 *.iml

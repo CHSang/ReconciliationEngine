@@ -1,9 +1,11 @@
 package com.example.reconciliation.model;
 
+import java.io.Serializable;
+
 /**
  * The DBS and Quantifeed records for one correlationId. One side is null when the record exists in only one system.
  */
-public record RecordMatch(SourceRecord dbs, SourceRecord quantifeed) {
+public record RecordMatch(SourceRecord dbs, SourceRecord quantifeed) implements Serializable {
 
     public boolean isPair() {
         return dbs != null && quantifeed != null;

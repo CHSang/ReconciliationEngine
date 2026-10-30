@@ -16,7 +16,8 @@ to reproduce the sample results on any day:
 java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar --reconciliation.run-date=2026-10-28
 ```
 
-Built with Java 21, Spring Boot 3.5 and Spring Batch. **No database or external service is needed.**
+Built with Java 21, Spring Boot 3.5 and Spring Batch. **No external service is needed:** run history is kept in an
+embedded H2 database file under `work/`, so a failed run can resume (see below).
 
 ## Build and run
 
@@ -45,6 +46,19 @@ java -jar target/reconciliation-engine-0.1.0-SNAPSHOT.jar \
 
 The defaults are in `src/main/resources/application.yml`. Exit code `0` means the run completed (breaks are normal
 results). `1` means it failed, for example on a missing file or missing columns.
+
+## Resuming a failed run
+
+If a run fails, the next start continues it from the step that failed. The steps that already completed are skipped,
+and their output is read back from the run history. The resumed run keeps its `runId`, so the results file shows the
+same `runId` as the failed attempt. For example, if writing the results fails because the output folder isn't
+writable, fix the folder and start the app again: only the export step runs.
+
+A fresh run starts instead when the input files, the run date or `settlement-days` differ from the failed run's. The
+log shows the old and new settings. A different output file does not prevent a resume. When `run-date` is not set, a
+run that failed on an earlier day therefore starts fresh.
+
+To start fresh anyway, delete the `work/` folder. This clears the run history.
 
 ## Run in IntelliJ IDEA
 

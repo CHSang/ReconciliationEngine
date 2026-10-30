@@ -1,5 +1,7 @@
 package com.example.reconciliation.model;
 
+import java.io.Serializable;
+
 /**
  * Final result for one correlationId. One side is null when the record exists in only one system.
  *
@@ -13,7 +15,7 @@ public record ReconciliationResult(
         Status status,
         ReconciliationType type,
         String breakType,
-        String differenceDetails) {
+        String differenceDetails) implements Serializable {
 
     public enum Status {
         MATCHED,

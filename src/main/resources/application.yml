@@ -3,6 +3,16 @@ spring:
     name: reconciliation-engine
   main:
     banner-mode: off
+  # Run history for resuming failed runs. Delete ./work to clear it.
+  datasource:
+    url: jdbc:h2:file:./work/batch-db;TRACE_LEVEL_FILE=0   # no trace file for the "table exists" notes on each start
+    username: sa
+    password: ""
+  batch:
+    jdbc:
+      initialize-schema: always   # create Spring Batch's tables on first start
+    job:
+      enabled: false              # ReconciliationJobRunner starts the job, not Spring Boot
 
 reconciliation:
   input:

@@ -1,13 +1,10 @@
 package com.example.reconciliation.service;
 
-import com.example.reconciliation.config.ReconciliationProperties;
 import com.example.reconciliation.model.RecordMatch;
 import com.example.reconciliation.model.ReconciliationResult;
 import com.example.reconciliation.model.ReconciliationResult.Status;
 import com.example.reconciliation.model.ReconciliationType;
 import com.example.reconciliation.model.SourceRecord;
-import org.springframework.stereotype.Component;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -21,15 +18,14 @@ import java.util.Objects;
  * A record found in only one system is PENDING (AWAITING_SETTLEMENT) until its businessDate + settlement-days,
  * because the other system may only book it at settlement (e.g. T+2). After that it is a MISSING_IN_... break.
  */
-@Component
 public class RecordComparator {
 
     private final int settlementDays;
     private final LocalDate runDate;
 
-    public RecordComparator(ReconciliationProperties properties) {
-        this.settlementDays = properties.settlementDays();
-        this.runDate = properties.runDateOrToday();
+    public RecordComparator(int settlementDays, LocalDate runDate) {
+        this.settlementDays = settlementDays;
+        this.runDate = runDate;
     }
 
     public ReconciliationResult compare(RecordMatch match) {

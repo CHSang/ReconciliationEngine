@@ -30,6 +30,7 @@ import java.util.List;
 /**
  * Reconciliation job, in order:
  * check input files -> read and normalize both sources -> match by correlationId -> compare -> write results CSV.
+ * Each step's output is saved with the run (see {@link RunData}), so a failed run can resume at the step that failed.
  */
 @Configuration
 public class ReconciliationJobConfig {
@@ -65,10 +66,10 @@ public class ReconciliationJobConfig {
     public Step normalizeInputStep(JobRepository jobRepository,
                                    PlatformTransactionManager transactionManager,
                                    ReconciliationProperties properties,
-                                   CsvRecordReader reader,
-                                   RunData runData) {
+                                   CsvRecordReader reader) {
         return new StepBuilder("normalizeInputStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
+                    RunData runData = RunData.of(chunkContext);
                     runData.setRecords(SourceSystem.DBS, load(SourceSystem.DBS, properties.input().dbs(), reader));
                     runData.setRecords(SourceSystem.QUANTIFEED, load(SourceSystem.QUANTIFEED, properties.input().quantifeed(), reader));
                     return RepeatStatus.FINISHED;
@@ -79,10 +80,10 @@ public class ReconciliationJobConfig {
     @Bean
     public Step matchStep(JobRepository jobRepository,
                           PlatformTransactionManager transactionManager,
-                          RecordMatcher matcher,
-                          RunData runData) {
+                          RecordMatcher matcher) {
         return new StepBuilder("matchStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
+                    RunData runData = RunData.of(chunkContext);
                     runData.setMatches(matcher.match(
                             runData.records(SourceSystem.DBS), runData.records(SourceSystem.QUANTIFEED)));
                     return RepeatStatus.FINISHED;
@@ -92,11 +93,14 @@ public class ReconciliationJobConfig {
 
     @Bean
     public Step compareStep(JobRepository jobRepository,
-                            PlatformTransactionManager transactionManager,
-                            RecordComparator comparator,
-                            RunData runData) {
+                            PlatformTransactionManager transactionManager) {
         return new StepBuilder("compareStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
+                    // Settings saved with the run, so a resumed run compares with the values it started with.
+                    RunSettings settings = RunSettings.from(
+                            chunkContext.getStepContext().getStepExecution().getJobParameters());
+                    RecordComparator comparator = new RecordComparator(settings.settlementDays().intValue(), settings.runDate());
+                    RunData runData = RunData.of(chunkContext);
                     runData.setResults(runData.matches().stream().map(comparator::compare).toList());
                     return RepeatStatus.FINISHED;
                 }, transactionManager)
@@ -107,10 +111,10 @@ public class ReconciliationJobConfig {
     public Step exportStep(JobRepository jobRepository,
                            PlatformTransactionManager transactionManager,
                            ReconciliationProperties properties,
-                           ResultWriter writer,
-                           RunData runData) {
+                           ResultWriter writer) {
         return new StepBuilder("exportStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
+                    RunData runData = RunData.of(chunkContext);
                     String runId = (String) chunkContext.getStepContext().getJobParameters().get("runId");
                     Path file = properties.output().file();
                     writer.write(runId, runData.results(), file);

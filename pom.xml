@@ -28,13 +28,17 @@
         </dependency>
 
         <!--
-            spring-batch-core directly, NOT spring-boot-starter-batch.
-            The starter pulls in spring-boot-starter-jdbc + HikariCP and expects a DataSource.
-            This demo runs without any database (see BatchInfrastructureConfig).
+            Spring Batch with a JDBC job repository. Run history is kept in an embedded H2 file database
+            (./work/batch-db), so a failed run can resume from the step that failed. No external service is needed.
         -->
         <dependency>
-            <groupId>org.springframework.batch</groupId>
-            <artifactId>spring-batch-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-batch</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- RFC 4180 CSV parsing (quoted fields, embedded commas/quotes). -->
